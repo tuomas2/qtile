@@ -27,13 +27,14 @@ from . import base
 from .generic_poll_text import GenPollUrl
 import locale
 
+_DEFAULT_CURRENCY = str(locale.localeconv()['int_curr_symbol'])
+
 
 class BitcoinTicker(GenPollUrl):
     """
     A bitcoin ticker widget, data provided by the coinbase.com API. Defaults to
-    displaying currency in whatever the current locale is. Examples:
+    displaying currency in whatever the current locale is. Examples::
 
-    ::
         # display the average price of bitcoin in local currency
         widget.BitcoinTicker()
 
@@ -46,7 +47,7 @@ class BitcoinTicker(GenPollUrl):
     orientations = base.ORIENTATION_HORIZONTAL
 
     defaults = [
-        ('currency', locale.localeconv()['int_curr_symbol'].strip(),
+        ('currency', _DEFAULT_CURRENCY.strip(),
             'The currency the value that bitcoin is displayed in'),
     ]
 

@@ -25,8 +25,10 @@
 # SOFTWARE.
 
 from libqtile.config import Key, Screen, Group, Drag, Click
-from libqtile.command import lazy
+from libqtile.lazy import lazy
 from libqtile import layout, bar, widget
+
+from typing import List  # noqa: F401
 
 mod = "mod4"
 
@@ -69,12 +71,26 @@ for i in groups:
         Key([mod], i.name, lazy.group[i.name].toscreen()),
 
         # mod1 + shift + letter of group = switch to & move focused window to group
-        Key([mod, "shift"], i.name, lazy.window.togroup(i.name)),
+        Key([mod, "shift"], i.name, lazy.window.togroup(i.name, switch_group=True)),
+        # Or, use below if you prefer not to switch to that group.
+        # # mod1 + shift + letter of group = move focused window to group
+        # Key([mod, "shift"], i.name, lazy.window.togroup(i.name)),
     ])
 
 layouts = [
     layout.Max(),
-    layout.Stack(num_stacks=2)
+    layout.Stack(num_stacks=2),
+    # Try more layouts by unleashing below layouts.
+    # layout.Bsp(),
+    # layout.Columns(),
+    # layout.Matrix(),
+    # layout.MonadTall(),
+    # layout.MonadWide(),
+    # layout.RatioTile(),
+    # layout.Tile(),
+    # layout.TreeTab(),
+    # layout.VerticalTile(),
+    # layout.Zoomy(),
 ]
 
 widget_defaults = dict(
@@ -88,12 +104,14 @@ screens = [
     Screen(
         bottom=bar.Bar(
             [
+                widget.CurrentLayout(),
                 widget.GroupBox(),
                 widget.Prompt(),
                 widget.WindowName(),
                 widget.TextBox("default config", name="default"),
                 widget.Systray(),
                 widget.Clock(format='%Y-%m-%d %a %I:%M %p'),
+                widget.QuickExit(),
             ],
             24,
         ),
@@ -110,7 +128,7 @@ mouse = [
 ]
 
 dgroups_key_binder = None
-dgroups_app_rules = []
+dgroups_app_rules = []  # type: List
 main = None
 follow_mouse_focus = True
 bring_front_click = False
@@ -136,7 +154,7 @@ focus_on_window_activation = "smart"
 
 # XXX: Gasp! We're lying here. In fact, nobody really uses or cares about this
 # string besides java UI toolkits; you can see several discussions on the
-# mailing lists, github issues, and other WM documentation that suggest setting
+# mailing lists, GitHub issues, and other WM documentation that suggest setting
 # this string if your java app doesn't work correctly. We may as well just lie
 # and say that we're a working one by default.
 #

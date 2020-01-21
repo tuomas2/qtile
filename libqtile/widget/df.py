@@ -18,10 +18,9 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-
-from __future__ import division
 import os
 from . import base
+
 
 class DF(base.ThreadedPollText):
     """Disk Free Widget
@@ -44,6 +43,7 @@ class DF(base.ThreadedPollText):
     measures = {"G": 1024 * 1024 * 1024,
                 "M": 1024 * 1024,
                 "B": 1024}
+
     def __init__(self, **config):
         base.ThreadedPollText.__init__(self, **config)
         self.add_defaults(DF.defaults)
@@ -68,8 +68,9 @@ class DF(base.ThreadedPollText):
         if self.visible_on_warn and self.user_free >= self.warn_space:
             text = ""
         else:
-            text = self.format.format(p=self.partition, s=size, f=free,
-                    uf=self.user_free, m=self.measure,
-                    r=(size - self.user_free) / size * 100)
+            text = self.format.format(
+                p=self.partition, s=size, f=free,
+                uf=self.user_free, m=self.measure,
+                r=(size - self.user_free) / size * 100)
 
         return text

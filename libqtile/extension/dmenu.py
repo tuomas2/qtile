@@ -18,7 +18,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import six
 import shlex
 from . import base
 
@@ -71,7 +70,7 @@ class Dmenu(base.RunCommand):
             font = self.dmenu_font
         elif self.font:
             if self.fontsize:
-                font = '-'.join((self.font, self.fontsize))
+                font = '{}-{}'.format(self.font, self.fontsize)
             else:
                 font = self.font
         self.configured_command.extend(("-fn", font))
@@ -89,17 +88,14 @@ class Dmenu(base.RunCommand):
             self.configured_command.extend(("-h", str(self.dmenu_height)))
 
     def run(self, items=None):
-        if items:
-            if self.dmenu_lines:
-                lines = min(len(items), self.dmenu_lines)
-            else:
-                lines = len(items)
+        if items and self.dmenu_lines:
+            lines = min(len(items), int(self.dmenu_lines))
             self.configured_command.extend(("-l", str(lines)))
 
-        proc = super(Dmenu, self).run()
+        proc = super().run()
 
         if items:
-            input_str = "\n".join([six.u(i) for i in items]) + "\n"
+            input_str = "\n".join([i for i in items]) + "\n"
             return proc.communicate(str.encode(input_str))[0].decode('utf-8')
 
         return proc

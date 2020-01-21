@@ -22,9 +22,12 @@
 # SOFTWARE.
 
 import os
-from . import base
+import shlex
 
 from libqtile.log_utils import logger
+from . import base
+
+from typing import Dict  # noqa: F401
 
 BACKLIGHT_DIR = '/sys/class/backlight'
 
@@ -32,7 +35,7 @@ BACKLIGHT_DIR = '/sys/class/backlight'
 class Backlight(base.InLoopPollText):
     """A simple widget to show the current brightness of a monitor"""
 
-    filenames = {}
+    filenames = {}  # type: Dict
 
     orientations = base.ORIENTATION_HORIZONTAL
 
@@ -52,7 +55,8 @@ class Backlight(base.InLoopPollText):
         ),
         ('update_interval', .2, 'The delay in seconds between updates'),
         ('step', 10, 'Percent of backlight every scroll changed'),
-        ('format', '{percent: 2.0%}', 'Display format')
+        ('format', '{percent: 2.0%}', 'Display format'),
+        ('change_command', 'xbacklight -set {0}', 'Execute command to change value')
     ]
 
     def __init__(self, **config):
@@ -61,40 +65,41 @@ class Backlight(base.InLoopPollText):
         self.future = None
 
     def _load_file(self, name):
+        path = os.path.join(BACKLIGHT_DIR, self.backlight_name, name)
         try:
-            path = os.path.join(BACKLIGHT_DIR, self.backlight_name, name)
             with open(path, 'r') as f:
                 return f.read().strip()
-        except:
-            logger.exception("Failed to read file: %s" % name)
-            raise
+        except FileNotFoundError:
+            logger.debug('Failed to get %s' % path)
+            raise RuntimeError('Unable to read status for {}'.format(name))
 
     def _get_info(self):
-        try:
-            info = {
-                'brightness': float(self._load_file(self.brightness_file)),
-                'max': float(self._load_file(self.max_brightness_file)),
-            }
-        except:
-            return
+        brightness = self._load_file(self.brightness_file)
+        max_value = self._load_file(self.max_brightness_file)
+
+        info = {
+            'brightness': float(brightness),
+            'max': float(max_value),
+        }
         return info
 
     def poll(self):
-        info = self._get_info()
-        if not info:
-            return 'Error'
+        try:
+            info = self._get_info()
+        except RuntimeError as e:
+            return 'Error: {}'.format(e)
 
         percent = info['brightness'] / info['max']
         return self.format.format(percent=percent)
 
     def change_backlight(self, value):
-        self.call_process(["xbacklight", "-set", str(value)])
+        self.call_process(shlex.split(self.change_command.format(value)))
 
     def button_press(self, x, y, button):
         if self.future and not self.future.done():
             return
         info = self._get_info()
-        if info is False:
+        if not info:
             new = now = 100
         else:
             new = now = info["brightness"] / info["max"] * 100

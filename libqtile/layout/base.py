@@ -20,14 +20,14 @@
 # SOFTWARE.
 
 import copy
-import six
 from abc import ABCMeta, abstractmethod
+from typing import Any, List, Tuple  # noqa: F401
 
-from .. import command, configurable
+from .. import configurable
+from libqtile.command_object import CommandObject
 
 
-@six.add_metaclass(ABCMeta)
-class Layout(command.CommandObject, configurable.Configurable):
+class Layout(CommandObject, configurable.Configurable, metaclass=ABCMeta):
     """This class defines the API that should be exposed by all layouts"""
     @classmethod
     def _name(cls):
@@ -38,7 +38,7 @@ class Layout(command.CommandObject, configurable.Configurable):
         None,
         "The name of this layout"
         " (usually the class' name in lowercase, e.g. 'max')"
-    )]
+    )]  # type: List[Tuple[str, Any, str]]
 
     def __init__(self, **config):
         # name is a little odd; we can't resolve it until the class is defined
@@ -47,7 +47,7 @@ class Layout(command.CommandObject, configurable.Configurable):
         if "name" not in config:
             config["name"] = self.__class__.__name__.lower()
 
-        command.CommandObject.__init__(self)
+        CommandObject.__init__(self)
         configurable.Configurable.__init__(self, **config)
         self.add_defaults(Layout.defaults)
 
@@ -342,7 +342,11 @@ class Delegate(Layout):
         """
         if name.startswith('cmd_'):
             return getattr(self._get_active_layout(), name)
-        return super(Delegate, self).__getattr__(name)
+        return super().__getattr__(name)
+
+    @property
+    def commands(self):
+        return self._get_active_layout().commands
 
     def info(self):
         d = Layout.info(self)
@@ -351,7 +355,7 @@ class Delegate(Layout):
         return d
 
 
-class _ClientList(object):
+class _ClientList:
     """
     ClientList maintains a list of clients and a current client.
 
@@ -444,8 +448,9 @@ class _ClientList(object):
             self.clients.insert(pos, client)
         else:
             self.clients.append(client)
+        self.current_client = client
 
-    def appendHead(self, client):
+    def append_head(self, client):
         """
         Append the given client in front of list.
         """
@@ -572,6 +577,7 @@ class _ClientList(object):
             current=self._current_idx,
         )
 
+
 class _SimpleLayoutBase(Layout):
     """
     Basic layout class for simple layouts,
@@ -592,7 +598,7 @@ class _SimpleLayoutBase(Layout):
 
     def focus(self, client):
         self.clients.current_client = client
-        self.group.layoutAll()
+        self.group.layout_all()
 
     def focus_first(self):
         return self.clients.focus_first()
@@ -607,12 +613,16 @@ class _SimpleLayoutBase(Layout):
         return self.clients.focus_previous(window)
 
     def previous(self):
+        if self.clients.current_client is None:
+            return
         client = self.focus_previous(self.clients.current_client) or self.focus_last()
-        self.group.focus(client, False)
+        self.group.focus(client, True)
 
     def next(self):
+        if self.clients.current_client is None:
+            return
         client = self.focus_next(self.clients.current_client) or self.focus_first()
-        self.group.focus(client, False)
+        self.group.focus(client, True)
 
     def add(self, client, offset_to_current=0):
         return self.clients.add(client, offset_to_current)

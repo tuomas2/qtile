@@ -46,24 +46,18 @@
 #
 # This is not intended to be a complete cffi-based pango binding.
 
-import six
 
 try:
     from libqtile._ffi_pango import ffi
 except ImportError:
-    # PyPy < 2.6 (cffi < 1) compatibility
-    import cffi
-    if cffi.__version_info__[0] == 0:
-        from libqtile.ffi_build import pango_ffi as ffi
-    else:
-        raise ImportError("No module named libqtile._ffi_pango, be sure to run `python ./libqtile/ffi_build.py`")
+    raise ImportError("No module named libqtile._ffi_pango, be sure to run `./scripts/ffibuild`")
 
 gobject = ffi.dlopen('libgobject-2.0.so.0')
 pango = ffi.dlopen('libpango-1.0.so.0')
 pangocairo = ffi.dlopen('libpangocairo-1.0.so.0')
 
 
-def CairoContext(cairo_t):
+def patch_cairo_context(cairo_t):
     def create_layout():
         return PangoLayout(cairo_t._pointer)
     cairo_t.create_layout = create_layout
@@ -74,12 +68,13 @@ def CairoContext(cairo_t):
 
     return cairo_t
 
+
 ALIGN_CENTER = pango.PANGO_ALIGN_CENTER
 ELLIPSIZE_END = pango.PANGO_ELLIPSIZE_END
 units_from_double = pango.pango_units_from_double
 
 
-class PangoLayout(object):
+class PangoLayout:
     def __init__(self, cairo_t):
         self._cairo_t = cairo_t
         self._pointer = pangocairo.pango_cairo_create_layout(cairo_t)
@@ -135,7 +130,7 @@ class PangoLayout(object):
         pango.pango_layout_set_width(self._pointer, width)
 
 
-class FontDescription(object):
+class FontDescription:
     def __init__(self, pointer=None):
         if pointer is None:
             self._pointer = pango.pango_font_description_new()
@@ -170,19 +165,16 @@ def parse_markup(value, accel_marker=0):
     attr_list = ffi.new("PangoAttrList**")
     text = ffi.new("char**")
     error = ffi.new("GError**")
-    if six.PY3:
-        value = value.encode()
+    value = value.encode()
 
     ret = pango.pango_parse_markup(value, -1, accel_marker, attr_list, text, ffi.NULL, error)
 
     if ret == 0:
         raise Exception("parse_markup() failed for %s" % value)
 
-    return attr_list[0], ffi.string(text[0]), six.unichr(accel_marker)
+    return attr_list[0], ffi.string(text[0]), chr(accel_marker)
 
 
 def markup_escape_text(text):
     ret = gobject.g_markup_escape_text(text.encode('utf-8'), -1)
-    if six.PY3:
-        return ffi.string(ret).decode()
-    return ffi.string(ret)
+    return ffi.string(ret).decode()

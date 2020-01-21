@@ -1,13 +1,13 @@
 import json
 
-import six
-from six.moves.urllib.request import urlopen, Request
+from urllib.request import urlopen, Request
 
 from libqtile.widget import base
 from libqtile.log_utils import logger
 
 try:
     import xmltodict
+
     def xmlparse(body):
         return xmltodict.parse(body)
 except ImportError:
@@ -15,6 +15,9 @@ except ImportError:
     # punt for now
     def xmlparse(body):
         raise Exception("no xmltodict library")
+
+from typing import Any, List, Tuple  # noqa: F401
+
 
 class GenPollText(base.ThreadedPollText):
     """A generic text widget that polls using poll function to get the text"""
@@ -44,7 +47,7 @@ class GenPollUrl(base.ThreadedPollText):
         ('user_agent', 'Qtile', 'Set the user agent'),
         ('headers', {}, 'Extra Headers'),
         ('xml', False, 'Is XML?'),
-    ]
+    ]  # type: List[Tuple[str, Any, str]]
 
     def __init__(self, **config):
         base.ThreadedPollText.__init__(self, **config)
@@ -55,10 +58,7 @@ class GenPollUrl(base.ThreadedPollText):
             headers = {}
         req = Request(url, data, headers)
         res = urlopen(req)
-        if six.PY3:
-            charset = res.headers.get_content_charset()
-        else:
-            charset = res.headers.getparam('charset')
+        charset = res.headers.get_content_charset()
 
         body = res.read()
         if charset:

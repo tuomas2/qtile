@@ -31,14 +31,6 @@
 # SOFTWARE.
 
 # depends on python-mpd
-
-
-# TODO: check if UI hangs in case of network issues and such
-# TODO: some kind of templating to make shown info configurable
-# TODO: best practice to handle failures? just write to stderr?
-
-from __future__ import division
-
 import re
 import time
 
@@ -72,7 +64,7 @@ class Mpd(base.ThreadPoolText):
     ]
 
     def __init__(self, **config):
-        super(Mpd, self).__init__('MPD Widget', **config)
+        super().__init__('MPD Widget', **config)
         self.add_defaults(Mpd.defaults)
         self.inc = 2
         self.client = mpd.MPDClient()
@@ -93,7 +85,7 @@ class Mpd(base.ThreadPoolText):
                 self.client.volume(1)
                 self.client.volume(-1)
                 self.client.disconnect()
-            except:
+            except Exception:
                 pass
         base._Widget.finalize(self)
 
@@ -123,7 +115,7 @@ class Mpd(base.ThreadPoolText):
         return True
 
     def _configure(self, qtile, bar):
-        super(Mpd, self)._configure(qtile, bar)
+        super()._configure(qtile, bar)
         self.layout = self.drawer.textlayout(
             self.text,
             self.foreground,
