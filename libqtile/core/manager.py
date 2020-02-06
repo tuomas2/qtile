@@ -535,7 +535,11 @@ class Qtile(CommandObject):
                 self.windows_map[w.wid] = c
                 # Window may have been bound to a group in the hook.
                 if not c.group:
+                    logger.warning("Adding to group %s", self.current_screen.group)
                     self.current_screen.group.add(c, focus=c.can_steal_focus())
+                else:
+                    logger.warning("Already added to %s", c.group)
+
                 self.update_client_list()
                 hook.fire("client_managed", c)
             return c

@@ -562,6 +562,7 @@ class Window:
 
     def get_wm_transient_for(self):
         r = self.get_property("WM_TRANSIENT_FOR", "WINDOW", unpack=int)
+        logger.info("Transient for %s", r)
 
         if r:
             return r[0]

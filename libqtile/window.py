@@ -770,6 +770,7 @@ class Window(_Window):
             win = qtile.windows_map.get(transient_for)
             if win is not None:
                 group = win._group
+                logger.info("%s init win %s transient_for %s win %s", self, window, transient_for, win)
         if group is not None:
             group.add(self)
             self._group = group
@@ -786,6 +787,7 @@ class Window(_Window):
 
     @group.setter
     def group(self, group):
+        logger.info("Setting %s group %s", self, group)#, "".join(traceback.format_stack()))
         if group:
             try:
                 self.window.set_property(
