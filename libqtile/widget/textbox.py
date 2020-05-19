@@ -23,12 +23,14 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from .. import bar
-from . import base
+from typing import Any, List, Tuple
+
+from libqtile import bar
+from libqtile.widget import base
 
 
 class TextBox(base._TextBox):
-    """A flexible textbox that can be updated from bound keys, scripts, and qshell"""
+    """A flexible textbox that can be updated from bound keys, scripts, and qshell."""
     orientations = base.ORIENTATION_HORIZONTAL
     defaults = [
         ("font", "sans", "Text font"),
@@ -36,7 +38,7 @@ class TextBox(base._TextBox):
         ("fontshadow", None, "font shadow color, default is None(no shadow)"),
         ("padding", None, "Padding left and right. Calculated if None."),
         ("foreground", "#ffffff", "Foreground colour."),
-    ]
+    ]  # type: List[Tuple[str, Any, str]]
 
     def __init__(self, text=" ", width=bar.CALCULATED, **config):
         base._TextBox.__init__(self, text=text, width=width, **config)

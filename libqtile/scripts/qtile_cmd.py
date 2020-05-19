@@ -31,9 +31,13 @@ import sys
 import textwrap
 from typing import List
 
-from libqtile.ipc import find_sockfile, Client
 from libqtile.command_client import InteractiveCommandClient
-from libqtile.command_interface import CommandError, CommandException, IPCCommandInterface
+from libqtile.command_interface import (
+    CommandError,
+    CommandException,
+    IPCCommandInterface,
+)
+from libqtile.ipc import Client, find_sockfile
 
 
 def get_formated_info(obj: InteractiveCommandClient, cmd: str, args=True, short=True) -> str:
@@ -113,13 +117,13 @@ def get_object(client: InteractiveCommandClient, argv: List[str]) -> Interactive
     for arg in argv:
         try:
             # check if it is an item
-            client = client[arg]
+            client = client[client.normalize_item(arg)]
             continue
         except KeyError:
             pass
 
         try:
-            # check it it is an attr
+            # check if it is an attr
             client = getattr(client, arg)
             continue
         except AttributeError:
@@ -184,10 +188,14 @@ def main() -> None:
                         help='Set arguments supplied to function.')
     parser.add_argument('--info', '-i', action='store_true',
                         help='With both --object and --function args prints documentation for function.')
+    parser.add_argument(
+        "--socket", "-s",
+        help='Path of the Qtile IPC socket.'
+    )
     args = parser.parse_args()
 
     if args.obj_spec:
-        sock_file = find_sockfile()
+        sock_file = args.socket or find_sockfile()
         ipc_client = Client(sock_file)
         cmd_object = IPCCommandInterface(ipc_client)
         cmd_client = InteractiveCommandClient(cmd_object)

@@ -24,10 +24,9 @@
 # SOFTWARE.
 import os
 import sys
-from typing import List  # noqa: F401
+from typing import Optional
 
 from libqtile.backend import base
-from . import config
 
 
 class ConfigError(Exception):
@@ -55,16 +54,22 @@ class Config:
         "wmname",
     ]
 
-    def __init__(self, **settings):
+    def __init__(self, file_path=None, kore=None, **settings):
         """Create a Config() object from settings
 
         Only attributes found in Config.settings_keys will be added to object.
         config attribute precedence is 1.) **settings 2.) self 3.) default_config
         """
-        self.keys = []  # type: List[config.Key]
-        self.mouse = []  # type: List[config.Mouse]
+        self.file_path = file_path
+        self.kore = kore
+        self.update(**settings)
 
-        from .resources import default_config
+    def update(self, *, fake_screens=None, **settings):
+        from libqtile.resources import default_config
+
+        if fake_screens:
+            self.fake_screens = fake_screens
+
         default = vars(default_config)
         for key in self.settings_keys:
             try:
@@ -72,45 +77,53 @@ class Config:
             except KeyError:
                 value = getattr(self, key, default[key])
             setattr(self, key, value)
-        self._init_fake_screens(**settings)
 
-    def _init_fake_screens(self, **settings):
-        " Initiaize fake_screens if they are set."
+    @classmethod
+    def from_file(cls, path: str, kore: Optional[base.Core] = None):
+        "Create a Config() object from the python file located at path."
+        cnf = cls(file_path=path, kore=kore)
+        cnf.load()
+        return cnf
+
+    def load(self):
+        name = os.path.splitext(os.path.basename(self.file_path))[0]
+
+        # Make sure we'll import the latest version of the config
         try:
-            value = settings['fake_screens']
-            setattr(self, 'fake_screens', value)
+            del sys.modules[name]
         except KeyError:
             pass
 
-    @classmethod
-    def from_file(cls, kore: base.Core, path: str):
-        "Create a Config() object from the python file located at path."
         try:
-            sys.path.insert(0, os.path.dirname(path))
-            config = __import__(os.path.basename(path)[:-3])  # noqa: F811
+            sys.path.insert(0, os.path.dirname(self.file_path))
+            config = __import__(name)  # noqa: F811
         except Exception:
             import traceback
-            from .log_utils import logger
-            logger.exception('Could not import config file %r', path)
+            from libqtile.log_utils import logger
+            logger.exception('Could not import config file %r', self.file_path)
             tb = traceback.format_exc()
             raise ConfigError(tb)
-        cnf = cls(**vars(config))
-        cnf.validate(kore)
-        return cnf
 
-    def validate(self, kore: base.Core) -> None:
+        self.update(**vars(config))
+        if self.kore:
+            self.validate()
+
+    def validate(self) -> None:
         """
             Validate the configuration against the core.
         """
-        valid_keys = kore.get_keys()
-        valid_mods = kore.get_modifiers()
-        for k in self.keys:
+        valid_keys = self.kore.get_keys()
+        valid_mods = self.kore.get_modifiers()
+        # we explicitly do not want to set self.keys and self.mouse above,
+        # because they are dynamically resolved from the default_config. so we
+        # need to ignore the errors here about missing attributes.
+        for k in self.keys:  # type: ignore
             if k.key not in valid_keys:
                 raise ConfigError("No such key: %s" % k.key)
             for m in k.modifiers:
                 if m not in valid_mods:
                     raise ConfigError("No such modifier: %s" % m)
-        for ms in self.mouse:
+        for ms in self.mouse:  # type: ignore
             for m in ms.modifiers:
                 if m not in valid_mods:
                     raise ConfigError("No such modifier: %s" % m)

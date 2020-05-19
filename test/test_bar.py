@@ -23,14 +23,15 @@
 # SOFTWARE.
 
 import os
-import pytest
 import tempfile
 
-import libqtile.layout
+import pytest
+
 import libqtile.bar
-import libqtile.widget
 import libqtile.config
 import libqtile.confreader
+import libqtile.layout
+import libqtile.widget
 
 
 class GBConfig:
@@ -243,14 +244,14 @@ def test_geometry(qtile):
 
 @geom_config
 def test_resize(qtile):
-    def wd(l):
-        return [i.length for i in l]
+    def wd(dwidget_list):
+        return [i.length for i in dwidget_list]
 
-    def offx(l):
-        return [i.offsetx for i in l]
+    def offx(dwidget_list):
+        return [i.offsetx for i in dwidget_list]
 
-    def offy(l):
-        return [i.offsety for i in l]
+    def offy(dwidget_list):
+        return [i.offsety for i in dwidget_list]
 
     for DBar, off in ((DBarH, offx), (DBarV, offy)):  # noqa: N806
         b = DBar([], 100)

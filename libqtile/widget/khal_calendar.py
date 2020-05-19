@@ -38,13 +38,14 @@
 # SOFTWARE.
 ###################################################################
 
-from . import base
 import datetime
-import dateutil.parser
-import subprocess
 import string
+import subprocess
+
+import dateutil.parser
 
 from libqtile import utils
+from libqtile.widget import base
 
 
 class KhalCalendar(base.ThreadedPollText):
@@ -53,6 +54,10 @@ class KhalCalendar(base.ThreadedPollText):
     This widget will display the next appointment on your Khal calendar in the
     qtile status bar. Appointments within the "reminder" time will be
     highlighted.
+
+    Widget requirements: dateutil_.
+
+    .. _dateutil: https://pypi.org/project/python-dateutil/
     """
     orientations = base.ORIENTATION_HORIZONTAL
     defaults = [

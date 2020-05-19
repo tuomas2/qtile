@@ -23,13 +23,17 @@
 # whose defaults depend on a reasonable locale sees something reasonable.
 import locale
 import logging
-from os import path, getenv
+from os import getenv, makedirs, path
 
-from libqtile.log_utils import init_log, logger
 from libqtile import confreader
 from libqtile.backend.x11 import xcore
+from libqtile.log_utils import init_log, logger
 
-locale.setlocale(locale.LC_ALL, locale.getdefaultlocale())  # type: ignore
+try:
+    locale.setlocale(locale.LC_ALL, locale.getdefaultlocale())  # type: ignore
+except locale.Error:
+    pass
+
 
 try:
     import pkg_resources
@@ -78,7 +82,7 @@ def make_qtile():
         action="store",
         default=None,
         dest="socket",
-        help='Path to Qtile comms socket.'
+        help='Path of the Qtile IPC socket.'
     )
     parser.add_argument(
         "-n", "--no-spawn",
@@ -103,16 +107,31 @@ def make_qtile():
     options = parser.parse_args()
     log_level = getattr(logging, options.log_level)
     init_log(log_level=log_level)
-
     kore = xcore.XCore()
+
     try:
-        config = confreader.Config.from_file(kore, options.configfile)
+        if not path.isfile(options.configfile):
+            try:
+                makedirs(path.dirname(options.configfile), exist_ok=True)
+                from shutil import copyfile
+                default_config_path = path.join(path.dirname(__file__),
+                                                "..",
+                                                "resources",
+                                                "default_config.py")
+                copyfile(default_config_path, options.configfile)
+                logger.info('Copied default_config.py to %s', options.configfile)
+            except Exception as e:
+                logger.exception('Failed to copy default_config.py to %s: (%s)',
+                                 options.configfile, e)
+
+        config = confreader.Config.from_file(options.configfile, kore=kore)
     except Exception as e:
         logger.exception('Error while reading config file (%s)', e)
         config = confreader.Config()
         from libqtile.widget import TextBox
         widgets = config.screens[0].bottom.widgets
         widgets.insert(0, TextBox('Config Err!'))
+
     # XXX: the import is here because we need to call init_log
     # before start importing stuff
     from libqtile.core import session_manager

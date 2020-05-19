@@ -18,10 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from . import confreader
-from . import drawer
-from . import configurable
-from . import window
+from libqtile import configurable, confreader, drawer, window
 from libqtile.command_object import CommandObject
 
 
@@ -66,27 +63,27 @@ class Gap(CommandObject):
             self.y = screen.y
             self.length = screen.width
             self.width = self.length
-            self.height = self.size
+            self.height = self.initial_size
             self.horizontal = True
         elif screen.bottom is self:
             self.x = screen.x
             self.y = screen.dy + screen.dheight
             self.length = screen.width
             self.width = self.length
-            self.height = self.size
+            self.height = self.initial_size
             self.horizontal = True
         elif screen.left is self:
             self.x = screen.x
             self.y = screen.dy
             self.length = screen.dheight
-            self.width = self.size
+            self.width = self.initial_size
             self.height = self.length
             self.horizontal = False
         else:  # right
             self.x = screen.dx + screen.dwidth
             self.y = screen.dy
             self.length = screen.dheight
-            self.width = self.size
+            self.width = self.initial_size
             self.height = self.length
             self.horizontal = False
 
@@ -153,6 +150,7 @@ class Bar(Gap, configurable.Configurable):
     defaults = [
         ("background", "#000000", "Background colour."),
         ("opacity", 1, "Bar window opacity."),
+        ("margin", 0, "Space around bar as int or list of ints [N E S W]."),
     ]
 
     def __init__(self, widgets, size, **config):
@@ -166,6 +164,29 @@ class Bar(Gap, configurable.Configurable):
 
     def _configure(self, qtile, screen):
         Gap._configure(self, qtile, screen)
+
+        if self.margin:
+            if isinstance(self.margin, int):
+                self.margin = [self.margin] * 4
+            if self.horizontal:
+                self.x += self.margin[3]
+                self.width -= self.margin[1] + self.margin[3]
+                self.length = self.width
+                if self.size == self.initial_size:
+                    self.size += self.margin[0] + self.margin[2]
+                if self.screen.top is self:
+                    self.y += self.margin[0]
+                else:
+                    self.y -= self.margin[2]
+            else:
+                self.y += self.margin[0]
+                self.height -= self.margin[0] + self.margin[2]
+                self.length = self.height
+                self.size += self.margin[1] + self.margin[3]
+                if self.screen.left is self:
+                    self.x += self.margin[3]
+                else:
+                    self.x -= self.margin[1]
 
         stretches = 0
         for w in self.widgets:
@@ -199,7 +220,10 @@ class Bar(Gap, configurable.Configurable):
         qtile.windows_map[self.window.window.wid] = self.window
         self.window.unhide()
 
-        for i in self.widgets:
+        for idx, i in enumerate(self.widgets):
+            if i.configured:
+                i = i.create_mirror()
+                self.widgets[idx] = i
             qtile.register_widget(i)
             i._configure(qtile, self)
         self._resize(self.length, self.widgets)

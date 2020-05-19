@@ -31,12 +31,11 @@
 
 import subprocess
 import threading
-import warnings
-from typing import Any, List, Tuple  # noqa: F401
+from typing import Any, List, Tuple
 
+from libqtile import bar, configurable, confreader, drawer
+from libqtile.command_object import CommandError, CommandObject
 from libqtile.log_utils import logger
-from libqtile.command_object import CommandObject, CommandError
-from .. import bar, configurable, drawer, confreader
 
 
 # Each widget class must define which bar orientation(s) it supports by setting
@@ -92,11 +91,30 @@ class _Widget(CommandObject, configurable.Configurable):
 
     The offsetx and offsety attributes are set by the Bar after all widgets
     have been configured.
+
+    Callback functions can be assigned to button presses by passing a dict to the
+    'callbacks' kwarg.
+
+    For example:
+
+    .. code-block:: python
+
+        def open_calendar(qtile):
+            qtile.cmd_spawn('gsimplecal next_month')
+
+        clock = widget.Clock(mouse_callbacks={'Button1': open_calendar})
+
+    When the clock widget receives a click with button 1, the ``open_calendar`` function
+    will be executed. Callbacks can be assigned to other buttons by adding more entries
+    to the passed dictionary.
     """
     orientations = ORIENTATION_BOTH
     offsetx = None
     offsety = None
-    defaults = [("background", None, "Widget background color")]  # type: List[Tuple[str, Any, str]]
+    defaults = [
+        ("background", None, "Widget background color"),
+        ("mouse_callbacks", {}, "Dict of mouse button press callback functions."),
+    ]  # type: List[Tuple[str, Any, str]]
 
     def __init__(self, length, **config):
         """
@@ -204,7 +222,9 @@ class _Widget(CommandObject, configurable.Configurable):
         )
 
     def button_press(self, x, y, button):
-        pass
+        name = 'Button{0}'.format(button)
+        if name in self.mouse_callbacks:
+            self.mouse_callbacks[name](self.qtile)
 
     def button_release(self, x, y, button):
         pass
@@ -272,6 +292,9 @@ class _Widget(CommandObject, configurable.Configurable):
             method(*method_args)
         except:  # noqa: E722
             logger.exception('got exception from widget timer')
+
+    def create_mirror(self):
+        return Mirror(self)
 
 
 UNSPECIFIED = bar.Obj("UNSPECIFIED")
@@ -445,6 +468,7 @@ class InLoopPollText(_TextBox):
 
     def button_press(self, x, y, button):
         self.tick()
+        _TextBox.button_press(self, x, y, button)
 
     def poll(self):
         return 'N/A'
@@ -545,7 +569,7 @@ class ThreadPoolText(_TextBox):
 # these two classes below look SUSPICIOUSLY similar
 
 
-class PaddingMixin:
+class PaddingMixin(configurable.Configurable):
     """Mixin that provides padding(_x|_y|)
 
     To use it, subclass and add this to __init__:
@@ -563,7 +587,7 @@ class PaddingMixin:
     padding_y = configurable.ExtraFallback('padding_y', 'padding')
 
 
-class MarginMixin:
+class MarginMixin(configurable.Configurable):
     """Mixin that provides margin(_x|_y|)
 
     To use it, subclass and add this to __init__:
@@ -581,5 +605,35 @@ class MarginMixin:
     margin_y = configurable.ExtraFallback('margin_y', 'margin')
 
 
-def deprecated(msg):
-    warnings.warn(msg, DeprecationWarning)
+class Mirror(_Widget):
+    def __init__(self, reflection):
+        _Widget.__init__(self, reflection.length)
+        reflection.draw = self.hook(reflection.draw)
+        self.reflects = reflection
+        self._length = 0
+
+    @property
+    def length(self):
+        return self.reflects.length
+
+    @length.setter
+    def length(self, value):
+        self._length = value
+
+    def hook(self, draw):
+        def _():
+            draw()
+            self.draw()
+        return _
+
+    def draw(self):
+        if self._length != self.reflects.length:
+            self._length = self.length
+            self.bar.draw()
+        else:
+            self.drawer.ctx.set_source_surface(self.reflects.drawer.surface)
+            self.drawer.ctx.paint()
+            self.drawer.draw(offsetx=self.offset, width=self.width)
+
+    def button_press(self, x, y, button):
+        self.reflects.button_press(x, y, button)

@@ -19,10 +19,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from . import base
-from .generic_poll_text import GenPollUrl
-
 import datetime
+
+from libqtile.widget import base
+from libqtile.widget.generic_poll_text import GenPollUrl
 
 
 class IdleRPG(GenPollUrl):
@@ -33,6 +33,10 @@ class IdleRPG(GenPollUrl):
 
         # display idlerpg stats for the player 'pants' on freenode's #idlerpg
         widget.IdleRPG(url="http://xethron.lolhosting.net/xml.php?player=pants")
+
+    Widget requirements: xmltodict_.
+
+    .. _xmltodict: https://pypi.org/project/xmltodict/
     """
 
     orientations = base.ORIENTATION_HORIZONTAL

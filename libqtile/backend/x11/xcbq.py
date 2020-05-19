@@ -34,23 +34,24 @@
     A minimal EWMH-aware OO layer over xcffib. This is NOT intended to be
     complete - it only implements the subset of functionalty needed by qtile.
 """
-from collections import OrderedDict
-from itertools import repeat, chain
-import operator
 import functools
+import operator
 import typing
+from collections import OrderedDict
+from itertools import chain, repeat
 
-from xcffib.xproto import CW, WindowClass, EventMask
-from xcffib.xfixes import SelectionEventMask
-
+import cairocffi
+import cairocffi.xcb
 import xcffib
 import xcffib.randr
 import xcffib.xinerama
 import xcffib.xproto
+from xcffib.xfixes import SelectionEventMask
+from xcffib.xproto import CW, EventMask, WindowClass
 
 from libqtile import xkeysyms
+from libqtile.backend.x11.xcursors import Cursors
 from libqtile.log_utils import logger
-from .xcursors import Cursors
 
 keysyms = xkeysyms.keysyms
 
@@ -682,7 +683,7 @@ class Window:
                 value
             ).check()
         except xcffib.xproto.WindowError:
-            logger.warning(
+            logger.debug(
                 'X error in SetProperty (wid=%r, prop=%r), ignoring',
                 self.wid, name)
 
@@ -712,7 +713,7 @@ class Window:
                 0, (2 ** 32) - 1
             ).reply()
         except (xcffib.xproto.WindowError, xcffib.xproto.AccessError):
-            logger.warning(
+            logger.debug(
                 'X error in GetProperty (wid=%r, prop=%r), ignoring',
                 self.wid, prop)
             if unpack:
@@ -832,6 +833,7 @@ class Connection:
     _extmap = {
         "xinerama": Xinerama,
         "randr": RandR,
+        "xfixes": XFixes,
     }
 
     def __init__(self, display):
@@ -843,7 +845,6 @@ class Connection:
         self.screens = [Screen(self, i) for i in self.setup.roots]
         self.default_screen = self.screens[self.conn.pref_screen]
 
-        self.xfixes = XFixes(self)
         for i in extensions:
             if i in self._extmap:
                 setattr(self, i, self._extmap[i](self))
@@ -944,7 +945,10 @@ class Connection:
         return Window(self, wid)
 
     def disconnect(self):
-        self.conn.disconnect()
+        try:
+            self.conn.disconnect()
+        except xcffib.ConnectionException:
+            logger.error("Failed to disconnect, connection already failed?")
         self._connected = False
 
     def flush(self):
@@ -973,6 +977,107 @@ class Connection:
             i.name.to_string().lower()
             for i in self.conn.core.ListExtensions().reply().names
         )
+
+
+class Painter:
+    def __init__(self, display):
+        self.conn = xcffib.connect(display=display)
+        self.setup = self.conn.get_setup()
+        self.screens = [Screen(self, i) for i in self.setup.roots]
+        self.default_screen = self.screens[self.conn.pref_screen]
+        self.conn.core.SetCloseDownMode(xcffib.xproto.CloseDown.RetainPermanent)
+        self.atoms = AtomCache(self)
+
+    def paint(self, screen, image_path, mode=None):
+        try:
+            with open(image_path, 'rb') as f:
+                image, _ = cairocffi.pixbuf.decode_to_image_surface(f.read())
+        except IOError as e:
+            logger.error('Wallpaper: %s' % e)
+            return
+
+        root_pixmap = self.default_screen.root.get_property(
+            '_XROOTPMAP_ID', xcffib.xproto.Atom.PIXMAP, int
+        )
+        if not root_pixmap:
+            root_pixmap = self.default_screen.root.get_property(
+                'ESETROOT_PMAP_ID', xcffib.xproto.Atom.PIXMAP, int
+            )
+        if root_pixmap:
+            root_pixmap = root_pixmap[0]
+        else:
+            root_pixmap = self.conn.generate_id()
+            self.conn.core.CreatePixmap(
+                self.default_screen.root_depth,
+                root_pixmap,
+                self.default_screen.root.wid,
+                self.default_screen.width_in_pixels,
+                self.default_screen.height_in_pixels,
+            )
+
+        for depth in self.default_screen.allowed_depths:
+            for visual in depth.visuals:
+                if visual.visual_id == self.default_screen.root_visual:
+                    root_visual = visual
+                    break
+        surface = cairocffi.xcb.XCBSurface(
+            self.conn, root_pixmap, root_visual,
+            self.default_screen.width_in_pixels,
+            self.default_screen.height_in_pixels,
+        )
+
+        context = cairocffi.Context(surface)
+        with context:
+            context.translate(screen.x, screen.y)
+            if mode == 'fill':
+                context.rectangle(0, 0, screen.width, screen.height)
+                context.clip()
+                image_w = image.get_width()
+                image_h = image.get_height()
+                width_ratio = screen.width / image_w
+                if width_ratio * image_h >= screen.height:
+                    context.scale(width_ratio)
+                else:
+                    height_ratio = screen.height / image_h
+                    context.translate(
+                        - (image_w * height_ratio - screen.width) // 2, 0
+                    )
+                    context.scale(height_ratio)
+            elif mode == 'stretch':
+                context.scale(
+                    sx=screen.width / image.get_width(),
+                    sy=screen.height / image.get_height(),
+                )
+            context.set_source_surface(image)
+            context.paint()
+
+        self.conn.core.ChangeProperty(
+            xcffib.xproto.PropMode.Replace,
+            self.default_screen.root.wid,
+            self.atoms['_XROOTPMAP_ID'],
+            xcffib.xproto.Atom.PIXMAP,
+            32, 1, [root_pixmap]
+        )
+        self.conn.core.ChangeProperty(
+            xcffib.xproto.PropMode.Replace,
+            self.default_screen.root.wid,
+            self.atoms['ESETROOT_PMAP_ID'],
+            xcffib.xproto.Atom.PIXMAP,
+            32, 1, [root_pixmap]
+        )
+        self.conn.core.ChangeWindowAttributes(
+            self.default_screen.root.wid,
+            xcffib.xproto.CW.BackPixmap, [root_pixmap]
+        )
+        self.conn.core.ClearArea(
+            0, self.default_screen.root.wid, 0, 0,
+            self.default_screen.width_in_pixels,
+            self.default_screen.height_in_pixels
+        )
+        self.conn.flush()
+
+    def __del__(self):
+        self.conn.disconnect()
 
 
 def get_keysym(key: str) -> int:

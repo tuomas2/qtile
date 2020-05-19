@@ -31,11 +31,10 @@
 # SOFTWARE.
 
 import itertools
+from typing import Any, List, Tuple
 
-from .. import bar, hook
-from . import base
-
-from typing import Any, List, Tuple  # noqa: F401
+from libqtile import bar, hook
+from libqtile.widget import base
 
 
 class _GroupBase(base._TextBox, base.PaddingMixin, base.MarginMixin):
@@ -155,6 +154,7 @@ class GroupBox(_GroupBase):
     """
     orientations = base.ORIENTATION_HORIZONTAL
     defaults = [
+        ("block_highlight_text_color", None, "Selected group font colour"),
         ("active", "FFFFFF", "Active group font colour"),
         ("inactive", "404040", "Inactive group font colour"),
         (
@@ -334,6 +334,8 @@ class GroupBox(_GroupBase):
                     border = self.bar.background
                     text_color = self.this_current_screen_border
                 else:
+                    if self.block_highlight_text_color:
+                        text_color = self.block_highlight_text_color
                     if self.bar.screen.group.name == g.name:
                         if self.qtile.current_screen == self.bar.screen:
                             border = self.this_current_screen_border

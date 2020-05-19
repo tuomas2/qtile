@@ -22,14 +22,13 @@ import contextlib
 import inspect
 import traceback
 import warnings
-from xcffib.xproto import EventMask, StackMode, SetMode
+
 import xcffib.xproto
+from xcffib.xproto import EventMask, SetMode, StackMode
 
-from . import utils
-from . import hook
-from .log_utils import logger
-from libqtile.command_object import CommandObject, CommandError
-
+from libqtile import hook, utils
+from libqtile.command_object import CommandError, CommandObject
+from libqtile.log_utils import logger
 
 # ICCM Constants
 NoValue = 0x0000
@@ -40,17 +39,6 @@ HeightValue = 0x0008
 AllValues = 0x000F
 XNegative = 0x0010
 YNegative = 0x0020
-USPosition = (1 << 0)
-USSize = (1 << 1)
-PPosition = (1 << 2)
-PSize = (1 << 3)
-PMinSize = (1 << 4)
-PMaxSize = (1 << 5)
-PResizeInc = (1 << 6)
-PAspect = (1 << 7)
-PBaseSize = (1 << 8)
-PWinGravity = (1 << 9)
-PAllHints = (PPosition | PSize | PMinSize | PMaxSize | PResizeInc | PAspect)
 InputHint = (1 << 0)
 StateHint = (1 << 1)
 IconPixmapHint = (1 << 2)
@@ -63,8 +51,8 @@ UrgencyHint = (1 << 8)
 AllHints = (InputHint | StateHint | IconPixmapHint | IconWindowHint |
             IconPositionHint | IconMaskHint | WindowGroupHint | MessageHint |
             UrgencyHint)
-WithdrawnState = 0
 
+WithdrawnState = 0
 DontCareState = 0
 NormalState = 1
 ZoomState = 2
@@ -249,6 +237,14 @@ class _Window(CommandObject):
     def has_focus(self):
         return self == self.qtile.current_window
 
+    def has_user_set_position(self):
+        try:
+            if 'USPosition' in self.hints['flags'] or 'PPosition' in self.hints['flags']:
+                return True
+        except KeyError:
+            pass
+        return False
+
     def update_name(self):
         try:
             self.name = self.window.get_name()
@@ -287,7 +283,6 @@ class _Window(CommandObject):
         # }
 
         if normh:
-            normh.pop('flags')
             normh['min_width'] = max(0, normh.get('min_width', 0))
             normh['min_height'] = max(0, normh.get('min_height', 0))
             if not normh['base_width'] and \
@@ -549,7 +544,15 @@ class _Window(CommandObject):
                     "WM_TAKE_FOCUS" in self.window.get_wm_protocols():
                 data = [
                     self.qtile.conn.atoms["WM_TAKE_FOCUS"],
-                    xcffib.xproto.Time.CurrentTime,
+                    # The timestamp here must be a valid timestamp, not CurrentTime.
+                    #
+                    # see https://tronche.com/gui/x/icccm/sec-4.html#s-4.1.7
+                    # > Windows with the atom WM_TAKE_FOCUS in their WM_PROTOCOLS
+                    # > property may receive a ClientMessage event from the
+                    # > window manager (as described in section 4.2.8) with
+                    # > WM_TAKE_FOCUS in its data[0] field and a valid timestamp
+                    # > (i.e. not *CurrentTime* ) in its data[1] field.
+                    self.qtile.core.get_valid_timestamp(),
                     0,
                     0,
                     0
@@ -566,7 +569,7 @@ class _Window(CommandObject):
                 self.window.send_event(e)
 
             # Never send FocusIn to java windows
-            if not is_java and self.hints['input']:
+            elif not is_java and self.hints['input']:
                 self.window.set_input_focus()
             try:
                 if warp and self.qtile.config.cursor_warp:
@@ -1001,10 +1004,16 @@ class Window(_Window):
             height = max(self.height, self.hints.get('min_height', 0))
 
             if self.hints['base_width'] and self.hints['width_inc']:
-                width -= (width - self.hints['base_width']) % self.hints['width_inc']
+                width_adjustment = (width - self.hints['base_width']) % self.hints['width_inc']
+                width -= width_adjustment
+                if new_float_state == FULLSCREEN:
+                    self.x += int(width_adjustment / 2)
 
             if self.hints['base_height'] and self.hints['height_inc']:
-                height -= (height - self.hints['base_height']) % self.hints['height_inc']
+                height_adjustment = (height - self.hints['base_height']) % self.hints['height_inc']
+                height -= height_adjustment
+                if new_float_state == FULLSCREEN:
+                    self.y += int(height_adjustment / 2)
 
             self.place(
                 self.x, self.y,

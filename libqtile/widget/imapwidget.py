@@ -19,12 +19,13 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from . import base
-from libqtile.log_utils import logger
-
 import imaplib
 import re
+
 import keyring
+
+from libqtile.log_utils import logger
+from libqtile.widget import base
 
 
 class ImapWidget(base.ThreadedPollText):
@@ -58,6 +59,10 @@ class ImapWidget(base.ThreadedPollText):
     look at the mailbox at HomeMail/fred, the mbox setting would be:
     ``mbox="~/Maildir/HomeMail/fred"``.  Note the nested sets of quotes! Labels
     can be whatever you choose, of course.
+
+    Widget requirements: keyring_.
+
+    .. _keyring: https://pypi.org/project/keyring/
     """
     orientations = base.ORIENTATION_HORIZONTAL
     defaults = [

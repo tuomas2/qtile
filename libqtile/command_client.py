@@ -27,7 +27,7 @@ that interacts with qtile objects, it should favor using the command graph
 clients to do this interaction.
 """
 
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Union
 
 from libqtile.command_graph import (
     CommandGraphCall,
@@ -36,14 +36,15 @@ from libqtile.command_graph import (
     CommandGraphRoot,
     GraphType,
 )
-from libqtile.command_interface import CommandInterface
+from libqtile.command_interface import CommandInterface, IPCCommandInterface
 from libqtile.command_object import SelectError
+from libqtile.ipc import Client, find_sockfile
 
 
 class CommandClient:
     """The object that resolves the commands"""
 
-    def __init__(self, command: CommandInterface, *, current_node: GraphType = None) -> None:
+    def __init__(self, command: CommandInterface = None, *, current_node: GraphType = None) -> None:
         """A client that resolves calls through the command object interface
 
         Exposes a similar API to the command graph, but performs resolution of
@@ -60,6 +61,8 @@ class CommandClient:
             The current node that is pointed to in the command graph.  If not
             specified, the command graph root is used.
         """
+        if command is None:
+            command = IPCCommandInterface(Client(find_sockfile()))
         self._command = command
         if current_node is None:
             self._current_node = CommandGraphRoot()  # type: GraphType
@@ -149,7 +152,7 @@ class InteractiveCommandClient:
     A command graph client that can be used to easily resolve elements interactively
     """
 
-    def __init__(self, command: CommandInterface, *, current_node: GraphType = None) -> None:
+    def __init__(self, command: CommandInterface = None, *, current_node: GraphType = None) -> None:
         """An interactive client that resolves calls through the gives client
 
         Exposes the command graph API in such a way that it can be traversed
@@ -158,13 +161,15 @@ class InteractiveCommandClient:
 
         Parameters
         ----------
-        command: InteractiveCommandInterface
+        command: CommandInterface
             The object that is used to resolve command graph calls, as well as
             navigate the command graph.
         current_node: CommandGraphNode
             The current node that is pointed to in the command graph.  If not
             specified, the command graph root is used.
         """
+        if command is None:
+            command = IPCCommandInterface(Client(find_sockfile()))
         self._command = command
         if current_node is None:
             self._current_node = CommandGraphRoot()  # type: GraphType
@@ -211,7 +216,7 @@ class InteractiveCommandClient:
         next_node = self._current_node.navigate(name, None)
         return self.__class__(self._command, current_node=next_node)
 
-    def __getitem__(self, name: str) -> "InteractiveCommandClient":
+    def __getitem__(self, name: Union[str, int]) -> "InteractiveCommandClient":
         """Get the selected element of the currently selected object
 
         From the current command graph object, select the instance with the
@@ -220,7 +225,7 @@ class InteractiveCommandClient:
         Parameters
         ----------
         name : str
-            The name of the item to resolve
+            The name, or index if it's of int type, of the item to resolve
 
         Return
         ------
@@ -228,15 +233,34 @@ class InteractiveCommandClient:
             The current client, navigated to the specified command graph
             object.
         """
+        if isinstance(self._current_node, CommandGraphRoot):
+            raise KeyError("Root node has no available items",
+                           name, self._current_node.selectors)
+
         if not isinstance(self._current_node, CommandGraphObject):
-            raise SelectError("Unable to make selection on current node", name, self._current_node.selectors)
+            raise SelectError("Unable to make selection on current node",
+                              str(name), self._current_node.selectors)
 
         if self._current_node.selector is not None:
-            raise SelectError("Selection already made", name, self._current_node.selectors)
+            raise SelectError("Selection already made", str(name),
+                              self._current_node.selectors)
 
-        # check that the selection is valid
-        if not self._command.has_item(self._current_node.parent, self._current_node.object_type, name):
-            raise SelectError("Item not available in object", name, self._current_node.selectors)
+        # check the selection is valid in the server-side qtile manager
+        if not self._command.has_item(self._current_node.parent,
+                                      self._current_node.object_type, name):
+            raise SelectError("Item not available in object",
+                              str(name), self._current_node.selectors)
 
         next_node = self._current_node.parent.navigate(self._current_node.object_type, name)
         return self.__class__(self._command, current_node=next_node)
+
+    def normalize_item(self, item: Union[str, int]) -> Union[str, int]:
+        "Normalize the item according to Qtile._items()."
+        object_type = self._current_node.object_type \
+            if isinstance(self._current_node, CommandGraphObject) else None
+        if object_type in ["group", "widget", "bar"]:
+            return str(item)
+        elif object_type in ["layout", "window", "screen"]:
+            return int(item)
+        else:
+            return item

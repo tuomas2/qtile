@@ -22,14 +22,15 @@
 import asyncio
 import os
 from collections import OrderedDict
-from typing import Callable, Iterator, List, Optional, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable, Iterator, List, Optional, Tuple
 
 import xcffib
+import xcffib.render
 import xcffib.xproto
 
-from . import xcbq
 from libqtile import config, hook, utils, window
 from libqtile.backend import base
+from libqtile.backend.x11 import xcbq
 from libqtile.log_utils import logger
 from libqtile.utils import QtileError
 
@@ -65,6 +66,7 @@ class XCore(base.Core):
 
         self.conn = xcbq.Connection(display_name)
         self._display_name = display_name
+        self._fd = None  # type: Optional[int]
 
         # Because we only do Xinerama multi-screening,
         # we can assume that the first
@@ -84,9 +86,9 @@ class XCore(base.Core):
             "_NET_SUPPORTED", [self.conn.atoms[x] for x in xcbq.SUPPORTED_ATOMS]
         )
 
-        wmname = "qtile"
+        self._wmname = "qtile"
         self._supporting_wm_check_window = self.conn.create_window(-1, -1, 1, 1)
-        self._supporting_wm_check_window.set_property("_NET_WM_NAME", wmname)
+        self._supporting_wm_check_window.set_property("_NET_WM_NAME", self._wmname)
         self._supporting_wm_check_window.set_property(
             "_NET_SUPPORTING_WM_CHECK", self._supporting_wm_check_window.wid
         )
@@ -102,8 +104,9 @@ class XCore(base.Core):
         self._selection_window.set_attribute(
             eventmask=xcffib.xproto.EventMask.PropertyChange
         )
-        self.conn.xfixes.select_selection_input(self._selection_window, "PRIMARY")
-        self.conn.xfixes.select_selection_input(self._selection_window, "CLIPBOARD")
+        if hasattr(self.conn, "xfixes"):
+            self.conn.xfixes.select_selection_input(self._selection_window, "PRIMARY")  # type: ignore
+            self.conn.xfixes.select_selection_input(self._selection_window, "CLIPBOARD")  # type: ignore
 
         primary_atom = self.conn.atoms["PRIMARY"]
         reply = self.conn.conn.core.GetSelectionOwner(primary_atom).reply()
@@ -121,6 +124,7 @@ class XCore(base.Core):
         self._root.set_cursor("left_ptr")
 
         self.qtile = None  # type: Optional[Qtile]
+        self._painter = None
 
         numlock_code = self.conn.keysym_to_keycode(xcbq.keysyms["Num_Lock"])
         self._numlock_mask = xcbq.ModMasks.get(self.conn.get_modifier(numlock_code), 0)
@@ -150,6 +154,15 @@ class XCore(base.Core):
         return [(x, y, w, h) for (x, y), (w, h) in xywh.items()]
 
     @property
+    def wmname(self):
+        return self._wmname
+
+    @wmname.setter
+    def wmname(self, wmname):
+        self._wmname = wmname
+        self._supporting_wm_check_window.set_property("_NET_WM_NAME", wmname)
+
+    @property
     def masks(self) -> Tuple[int, int]:
         return self._numlock_mask, self._valid_mask
 
@@ -165,20 +178,21 @@ class XCore(base.Core):
         """
         logger.debug("Adding io watch")
         self.qtile = qtile
-        fd = self.conn.conn.get_file_descriptor()
-        eventloop.add_reader(fd, self._xpoll)
+        self.fd = self.conn.conn.get_file_descriptor()
+        eventloop.add_reader(self.fd, self._xpoll)
 
-    def remove_listener(self, eventloop: asyncio.AbstractEventLoop) -> None:
-        """Remove the listener from the given event loop
-
-        :param eventloop:
-            The eventloop that had been setup for listening.
-        """
-        logger.debug("Removing io watch")
-        fd = self.conn.conn.get_file_descriptor()
-        eventloop.remove_reader(fd)
+    def remove_listener(self) -> None:
+        """Remove the listener from the given event loop"""
+        self._remove_listener()
         self.qtile = None
         self.conn.finalize()
+
+    def _remove_listener(self) -> None:
+        if self.fd is not None:
+            logger.debug("Removing io watch")
+            loop = asyncio.get_event_loop()
+            loop.remove_reader(self.fd)
+            self.fd = None
 
     def scan(self) -> None:
         """Scan for existing windows"""
@@ -244,6 +258,9 @@ class XCore(base.Core):
                 xcffib.xproto.WindowError,
                 xcffib.xproto.AccessError,
                 xcffib.xproto.DrawableError,
+                xcffib.xproto.GContextError,
+                xcffib.xproto.PixmapError,
+                xcffib.render.PictureError,
             ):
                 pass
             except Exception:
@@ -255,6 +272,7 @@ class XCore(base.Core):
                             error_string=error_string, error_code=error_code
                         )
                     )
+                    self._remove_listener()
                     self.qtile.stop()
                     return
                 logger.exception("Got an exception in poll loop")
@@ -273,7 +291,6 @@ class XCore(base.Core):
         """
         assert self.qtile is not None
 
-        chain = []
         handler = "handle_{event_type}".format(event_type=event_type)
         # Certain events expose the affected window id as an "event" attribute.
         event_events = [
@@ -291,6 +308,7 @@ class XCore(base.Core):
         else:
             window = None
 
+        chain = []
         if window is not None and hasattr(window, handler):
             chain.append(getattr(window, handler))
 
@@ -300,6 +318,40 @@ class XCore(base.Core):
         if not chain:
             logger.info("Unhandled event: {event_type}".format(event_type=event_type))
         return chain
+
+    def get_valid_timestamp(self):
+        """Get a valid timestamp, i.e. not CurrentTime, for X server.
+
+        It may be used in cases where CurrentTime is unacceptable for X server."""
+        # do a zero length append to get the time offset as suggested by ICCCM
+        # https://tronche.com/gui/x/icccm/sec-2.html#s-2.1
+        # we do this on a separate connection since we can't receive events
+        # without returning control to the event loop, which we can't do
+        # because the event loop (via some window event) wants to know the
+        # current time.
+        conn = None
+        try:
+            conn = xcbq.Connection(self._display_name)
+            conn.default_screen.root.set_attribute(
+                eventmask=xcffib.xproto.EventMask.PropertyChange
+            )
+            conn.conn.core.ChangePropertyChecked(
+                xcffib.xproto.PropMode.Append,
+                self._root.wid,
+                self.conn.atoms["WM_CLASS"],
+                self.conn.atoms["STRING"],
+                8,
+                0,
+                "",
+            ).check()
+            while True:
+                event = conn.conn.wait_for_event()
+                if event.__class__ != xcffib.xproto.PropertyNotifyEvent:
+                    continue
+                return event.time
+        finally:
+            if conn is not None:
+                conn.finalize()
 
     @property
     def display_name(self) -> str:
@@ -540,3 +592,9 @@ class XCore(base.Core):
 
     def handle_ScreenChangeNotify(self, event) -> None:  # noqa: N802
         hook.fire("screen_change", self.qtile, event)
+
+    @property
+    def painter(self):
+        if self._painter is None:
+            self._painter = xcbq.Painter(self._display_name)
+        return self._painter

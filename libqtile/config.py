@@ -25,12 +25,12 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import os.path
 import sys
 import warnings
+from typing import List
 
-from . import configurable
-from . import hook
-from . import utils
+from libqtile import configurable, hook, utils
 from libqtile.command_object import CommandObject
 
 
@@ -47,21 +47,21 @@ class Key:
     commands:
         A list of lazy command objects generated with the lazy.lazy helper.
         If multiple Call objects are specified, they are run in sequence.
-    kwds:
-        A dictionary containing "desc", allowing a description to be added
+    desc:
+        description to be added to the key binding
     """
-    def __init__(self, modifiers, key, *commands, **kwds):
+    def __init__(self, modifiers: List[str], key: str, *commands, desc: str = ""):
         self.modifiers = modifiers
         self.key = key
         self.commands = commands
-        self.desc = kwds.get("desc", "")
+        self.desc = desc
 
     def __repr__(self):
         return "<Key (%s, %s)>" % (self.modifiers, self.key)
 
 
 class Mouse:
-    def __init__(self, modifiers, button, *commands, **kwargs):
+    def __init__(self, modifiers: List[str], button: str, *commands, **kwargs):
         self.focus = kwargs.pop("focus", "before")
         self.modifiers = modifiers
         self.button = button
@@ -94,9 +94,6 @@ class Click(Mouse):
     It focuses clicked window by default.  If you want to prevent it, pass
     `focus=None` as an argument
     """
-    def __init__(self, modifiers, button, *commands, **kwargs):
-        super().__init__(modifiers, button, *commands, **kwargs)
-
     def __repr__(self):
         return "<Click (%s, %s)>" % (self.modifiers, self.button)
 
@@ -218,19 +215,27 @@ class Screen(CommandObject):
     and ``height`` aren't specified usually unless you are using 'fake
     screens'.
 
+    The ``wallpaper`` parameter, if given, should be a path to an image file. How this
+    image is painted to the screen is specified by the ``wallpaper_mode`` parameter. By
+    default, the image will be placed at the screens origin and retain its own
+    dimensions. If the mode is 'fill', the image will be centred on the screen and
+    resized to fill it. If the mode is 'stretch', the image is stretched to fit all of
+    it into the screen.
+
     Parameters
     ==========
     top: Gap/Bar object, or None.
     bottom: Gap/Bar object, or None.
     left: Gap/Bar object, or None.
     right: Gap/Bar object, or None.
+    wallpaper: Dict, or None.
     x : int or None
     y : int or None
     width : int or None
     height : int or None
     """
-    def __init__(self, top=None, bottom=None, left=None, right=None,
-                 x=None, y=None, width=None, height=None):
+    def __init__(self, top=None, bottom=None, left=None, right=None, wallpaper=None,
+                 wallpaper_mode=None, x=None, y=None, width=None, height=None):
         self.group = None
         self.previous_group = None
 
@@ -238,6 +243,8 @@ class Screen(CommandObject):
         self.bottom = bottom
         self.left = left
         self.right = right
+        self.wallpaper = wallpaper
+        self.wallpaper_mode = wallpaper_mode
         self.qtile = None
         self.index = None
         # x position of upper left corner can be > 0
@@ -257,6 +264,12 @@ class Screen(CommandObject):
         self.set_group(group)
         for i in self.gaps:
             i._configure(qtile, self)
+        if self.wallpaper:
+            self.wallpaper = os.path.expanduser(self.wallpaper)
+            self.paint(self.wallpaper, self.wallpaper_mode)
+
+    def paint(self, path, mode=None):
+        self.qtile.paint_screen(self, path, mode)
 
     @property
     def gaps(self):

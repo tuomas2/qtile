@@ -23,7 +23,7 @@ import copy
 from abc import ABCMeta, abstractmethod
 from typing import Any, List, Tuple  # noqa: F401
 
-from .. import configurable
+from libqtile import configurable
 from libqtile.command_object import CommandObject
 
 
@@ -559,6 +559,9 @@ class _ClientList:
             return self.clients[i]
         except IndexError:
             return None
+
+    def __setitem__(self, i, value):
+        self.clients[i] = value
 
     def __iter__(self):
         return self.clients.__iter__()

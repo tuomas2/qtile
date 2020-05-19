@@ -17,8 +17,8 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-from .base import Layout, _ClientList
-from .. import utils
+from libqtile import utils
+from libqtile.layout.base import Layout, _ClientList
 
 
 class _WinStack(_ClientList):
@@ -35,7 +35,7 @@ class _WinStack(_ClientList):
 
     def __str__(self):
         return "_WinStack: %s, %s" % (
-            self.current, str([client.name for client in self.clients])
+            self.cw, str([client.name for client in self.clients])
         )
 
     def info(self):

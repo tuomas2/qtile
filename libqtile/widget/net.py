@@ -17,19 +17,28 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+from math import log
+from typing import Tuple
+
 import psutil
 
 from libqtile.log_utils import logger
 from libqtile.widget import base
 
-from typing import Tuple
-from math import log
-
 
 class Net(base.ThreadedPollText):
-    """Displays interface down and up speed"""
+    """
+    Displays interface down and up speed
+
+
+    Widget requirements: psutil_.
+
+    .. _psutil: https://pypi.org/project/psutil/
+    """
     orientations = base.ORIENTATION_HORIZONTAL
     defaults = [
+        ('format', '{interface}: {down} \u2193\u2191 {up}',
+         'Display format of down-/upload speed of given interfaces'),
         ('interface', None, 'List of interfaces or single NIC as string to monitor, \
             None to displays all active NICs combined'),
         ('update_interval', 1, 'The update interval.'),
@@ -83,17 +92,12 @@ class Net(base.ThreadedPollText):
                 interfaces[iface] = {'down': down, 'up': up}
             return interfaces
 
-    def _format(self, down, up):
-        down = "%0.2f" % down
-        up = "%0.2f" % up
-        if len(down) > 5:
-            down = down[:5]
-        if len(up) > 5:
-            up = up[:5]
-
-        down = " " * (5 - len(down)) + down
-        up = " " * (5 - len(up)) + up
-        return down, up
+    def _format(self, down, down_letter, up, up_letter):
+        max_len_down = 7 - len(down_letter)
+        max_len_up = 7 - len(up_letter)
+        down = '{val:{max_len}.2f}'.format(val=down, max_len=max_len_down)
+        up = '{val:{max_len}.2f}'.format(val=up, max_len=max_len_up)
+        return down[:max_len_down], up[:max_len_up]
 
     def poll(self):
         ret_stat = []
@@ -109,10 +113,15 @@ class Net(base.ThreadedPollText):
                 up = up / self.update_interval
                 down, down_letter = self.convert_b(down)
                 up, up_letter = self.convert_b(up)
-                down, up = self._format(down, up)
-                str_base = "%s: %s%s \u2193\u2191 %s%s"
+                down, up = self._format(down, down_letter, up, up_letter)
                 self.stats[intf] = new_stats[intf]
-                ret_stat.append(str_base % (intf, down, down_letter, up, up_letter))
+                ret_stat.append(
+                    self.format.format(
+                        **{
+                            'interface': intf,
+                            'down': down + down_letter,
+                            'up': up + up_letter
+                        }))
 
             return " ".join(ret_stat)
         except Exception as excp:

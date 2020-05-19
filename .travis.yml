@@ -1,8 +1,8 @@
-sudo: false
+os: linux
 dist: xenial
 language: python
 
-matrix:
+jobs:
     include:
         - python: 3.5
           env: TOXENV=py35
@@ -47,6 +47,7 @@ addons:
     - xserver-xephyr
     - xterm
     - xvfb
+    - libpulse-dev # pulseaudio widget
 
 
 install:

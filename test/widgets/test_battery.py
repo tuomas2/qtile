@@ -1,9 +1,15 @@
-import pytest
-from libqtile.widget import Battery, BatteryIcon, battery
-from libqtile.widget.battery import BatteryState, BatteryStatus
-from libqtile import images
 import cairocffi
-from .conftest import TEST_DIR
+import pytest
+
+from libqtile import images
+from libqtile.widget import battery
+from libqtile.widget.battery import (
+    Battery,
+    BatteryIcon,
+    BatteryState,
+    BatteryStatus,
+)
+from test.widgets.conftest import TEST_DIR
 
 
 class DummyBattery:
