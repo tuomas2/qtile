@@ -30,6 +30,7 @@ import subprocess
 import time
 
 import pytest
+import xcffib.xproto
 
 import libqtile.bar
 import libqtile.config
@@ -38,6 +39,7 @@ import libqtile.core.manager
 import libqtile.hook
 import libqtile.layout
 import libqtile.widget
+from libqtile.backend.x11 import xcbq
 from libqtile.command_interface import CommandError, CommandException
 from libqtile.lazy import lazy
 from test.conftest import BareConfig, Retry, no_xinerama, whereis
@@ -248,7 +250,6 @@ def assert_window_died(client, window_info):
 @no_xinerama
 def test_kill_window(qtile):
     qtile.test_window("one")
-    qtile.testwindows = []
     window_info = qtile.c.window.info()
     qtile.c.window[window_info["id"]].kill()
     assert_window_died(qtile.c, window_info)
@@ -1091,3 +1092,189 @@ def test_change_loglevel(qtile):
     qtile.c.critical()
     assert qtile.c.loglevel() == logging.CRITICAL
     assert qtile.c.loglevelname() == 'CRITICAL'
+
+
+@manager_config
+def test_user_position(qtile):
+    w = None
+    conn = xcbq.Connection(qtile.display)
+
+    def user_position_window():
+        nonlocal w
+        w = conn.create_window(5, 5, 10, 10)
+        # manager config automatically floats xclock
+        w.set_property("WM_CLASS", "xclock", type="STRING", format=8)
+        # set the user specified position flag
+        hints = [0] * 18
+        hints[0] = xcbq.NormalHintsFlags["USPosition"]
+        w.set_property("WM_NORMAL_HINTS", hints, type="WM_SIZE_HINTS", format=32)
+        w.map()
+        conn.conn.flush()
+    try:
+        qtile.create_window(user_position_window)
+        assert qtile.c.window.info()['floating'] is True
+        assert qtile.c.window.info()['x'] == 5
+        assert qtile.c.window.info()['y'] == 5
+        assert qtile.c.window.info()['width'] == 10
+        assert qtile.c.window.info()['height'] == 10
+    finally:
+        w.kill_client()
+        conn.finalize()
+
+
+def wait_for_focus_events(conn):
+    got_take_focus = False
+    got_focus_in = False
+    while True:
+        event = conn.conn.poll_for_event()
+        if not event:
+            break
+
+        if (isinstance(event, xcffib.xproto.ClientMessageEvent) and
+                event.type != conn.atoms["WM_TAKE_FOCUS"]):
+            got_take_focus = True
+
+        if isinstance(event, xcffib.xproto.FocusInEvent):
+            got_focus_in = True
+    return got_take_focus, got_focus_in
+
+
+@manager_config
+def test_only_one_focus(qtile):
+    w = None
+    conn = xcbq.Connection(qtile.display)
+
+    def both_wm_take_focus_and_input_hint():
+        nonlocal w
+        w = conn.create_window(5, 5, 10, 10)
+        w.set_attribute(eventmask=xcffib.xproto.EventMask.FocusChange)
+        # manager config automatically floats xclock
+        w.set_property("WM_CLASS", "xclock", type="STRING", format=8)
+
+        # set both the input hit
+        hints = [0] * 14
+        hints[0] = xcbq.HintsFlags["InputHint"]
+        hints[1] = 1  # set hints to 1, i.e. we want them
+        w.set_property("WM_HINTS", hints, type="WM_HINTS", format=32)
+
+        # and add the WM_PROTOCOLS protocol WM_TAKE_FOCUS
+        conn.conn.core.ChangePropertyChecked(
+            xcffib.xproto.PropMode.Append,
+            w.wid,
+            conn.atoms["WM_PROTOCOLS"],
+            conn.atoms["ATOM"],
+            32,
+            1,
+            [conn.atoms["WM_TAKE_FOCUS"]],
+        ).check()
+
+        w.map()
+        conn.conn.flush()
+    try:
+        qtile.create_window(both_wm_take_focus_and_input_hint)
+        assert qtile.c.window.info()['floating'] is True
+        got_take_focus, got_focus_in = wait_for_focus_events(conn)
+        assert not got_take_focus
+        assert got_focus_in
+    finally:
+        w.kill_client()
+        conn.finalize()
+
+
+@manager_config
+def test_only_wm_protocols_focus(qtile):
+    w = None
+    conn = xcbq.Connection(qtile.display)
+
+    def only_wm_protocols_focus():
+        nonlocal w
+        w = conn.create_window(5, 5, 10, 10)
+        w.set_attribute(eventmask=xcffib.xproto.EventMask.FocusChange)
+        # manager config automatically floats xclock
+        w.set_property("WM_CLASS", "xclock", type="STRING", format=8)
+
+        hints = [0] * 14
+        hints[0] = xcbq.HintsFlags["InputHint"]
+        hints[1] = 0  # set hints to 0, i.e. we don't want them
+        w.set_property("WM_HINTS", hints, type="WM_HINTS", format=32)
+
+        # add the WM_PROTOCOLS protocol WM_TAKE_FOCUS
+        conn.conn.core.ChangePropertyChecked(
+            xcffib.xproto.PropMode.Append,
+            w.wid,
+            conn.atoms["WM_PROTOCOLS"],
+            conn.atoms["ATOM"],
+            32,
+            1,
+            [conn.atoms["WM_TAKE_FOCUS"]],
+        ).check()
+
+        w.map()
+        conn.conn.flush()
+    try:
+        qtile.create_window(only_wm_protocols_focus)
+        assert qtile.c.window.info()['floating'] is True
+        got_take_focus, got_focus_in = wait_for_focus_events(conn)
+        assert got_take_focus
+        assert not got_focus_in
+    finally:
+        w.kill_client()
+        conn.finalize()
+
+
+@manager_config
+def test_only_input_hint_focus(qtile):
+    w = None
+    conn = xcbq.Connection(qtile.display)
+
+    def only_input_hint():
+        nonlocal w
+        w = conn.create_window(5, 5, 10, 10)
+        w.set_attribute(eventmask=xcffib.xproto.EventMask.FocusChange)
+        # manager config automatically floats xclock
+        w.set_property("WM_CLASS", "xclock", type="STRING", format=8)
+
+        # set the input hint
+        hints = [0] * 14
+        hints[0] = xcbq.HintsFlags["InputHint"]
+        hints[1] = 1  # set hints to 1, i.e. we want them
+        w.set_property("WM_HINTS", hints, type="WM_HINTS", format=32)
+
+        w.map()
+        conn.conn.flush()
+    try:
+        qtile.create_window(only_input_hint)
+        assert qtile.c.window.info()['floating'] is True
+        got_take_focus, got_focus_in = wait_for_focus_events(conn)
+        assert not got_take_focus
+        assert got_focus_in
+    finally:
+        w.kill_client()
+        conn.finalize()
+
+
+@manager_config
+def test_no_focus(qtile):
+    w = None
+    conn = xcbq.Connection(qtile.display)
+
+    def no_focus():
+        nonlocal w
+        w = conn.create_window(5, 5, 10, 10)
+        w.set_attribute(eventmask=xcffib.xproto.EventMask.FocusChange)
+        # manager config automatically floats xclock
+        w.set_property("WM_CLASS", "xclock", type="STRING", format=8)
+
+        hints = [0] * 14
+        w.set_property("WM_HINTS", hints, type="WM_HINTS", format=32)
+        w.map()
+        conn.conn.flush()
+    try:
+        qtile.create_window(no_focus)
+        assert qtile.c.window.info()['floating'] is True
+        got_take_focus, got_focus_in = wait_for_focus_events(conn)
+        assert not got_take_focus
+        assert not got_focus_in
+    finally:
+        w.kill_client()
+        conn.finalize()
